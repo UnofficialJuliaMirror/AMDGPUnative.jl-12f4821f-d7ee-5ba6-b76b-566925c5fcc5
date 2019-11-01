@@ -205,7 +205,7 @@ function codegen(target::Symbol, job::CompilerJob;
         end
 
         @timeit to[] "compilation" begin
-            roc_mod = ROCModule(image, jit_options)
+            roc_mod = ROCModule(collect(codeunits(image)), jit_options)
             roc_fun = ROCFunction(roc_mod, kernel_fn)
         end
     end

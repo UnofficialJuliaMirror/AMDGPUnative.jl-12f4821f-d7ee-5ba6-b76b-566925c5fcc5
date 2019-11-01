@@ -72,6 +72,7 @@ include("reflection.jl")
 
 function __init__()
     check_deps()
+    __init_compiler__()
 end
 
 end # module

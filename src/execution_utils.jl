@@ -196,6 +196,7 @@ end
             launch(queue, signal, f, groupsize, gridsize, ($(arg_ptrs...),))
         end
     end).args)
+    Core.println(ex)
 
     return ex
 end

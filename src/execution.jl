@@ -143,7 +143,7 @@ macro roc(ex...)
                 local queue = get_default_queue(agent)
                 local signal = HSASignal()
                 kernel(queue, signal, kernel_args...; $(map(esc, call_kwargs)...))
-                wait(signal)
+                #wait(signal)
             end
         end)
     return code
@@ -228,7 +228,7 @@ keyword arguments are provided.
             key = hash(getfield(f, nf), key)
         end
         if !haskey(compilecache, key)
-            mod, fun = compile(agent, f, tt; kwargs...)
+            fun, mod = compile(:roc, agent, f, tt; kwargs...)
             kernel = Kernel{f,tt}(agent, mod, fun)
             compilecache[key] = kernel
         end

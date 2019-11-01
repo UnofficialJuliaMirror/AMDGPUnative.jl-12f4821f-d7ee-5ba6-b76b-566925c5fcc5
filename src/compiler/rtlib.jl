@@ -38,13 +38,14 @@ const libcache = Dict{String, LLVM.Module}()
 function load_device_libs(agent)
     device_libs_path === nothing && return
 
+    isa_short = replace(get_first_isa(agent), "gfx"=>"")
     device_libs = LLVM.Module[]
     bitcode_files = (
         "hc.amdgcn.bc",
         "hip.amdgcn.bc",
         "irif.amdgcn.bc",
         "ockl.amdgcn.bc",
-        "oclc_isa_version_906.amdgcn.bc", # FIXME: Load based on agent name!
+        "oclc_isa_version_$isa_short.amdgcn.bc",
         "opencl.amdgcn.bc",
         "ocml.amdgcn.bc",
     )
