@@ -74,7 +74,7 @@ function code_gcn(io::IO, @nospecialize(func), @nospecialize(types);
     code_gcn(io, job; raw=raw, strict=strict)
 end
 function code_gcn(io::IO, job::CompilerJob; raw::Bool=false, strict::Bool=false)
-    asm, _ = codegen(:gcn, job; strip=!raw, strict=strict)
+    asm, _ = codegen(:gcn_asm, job; strip=!raw, strict=strict)
     print(io, asm)
 end
 code_gcn(@nospecialize(func), @nospecialize(types); kwargs...) =

@@ -83,38 +83,38 @@ function codegen(target::Symbol, job::CompilerJob;
     defs(mod)  = filter(f -> !isdeclaration(f), collect(functions(mod)))
     decls(mod) = filter(f ->  isdeclaration(f) && intrinsic_id(f) == 0,
                         collect(functions(mod)))
-    need_library(lib) = any(f -> isdeclaration(f) &&
-                                 intrinsic_id(f) == 0 &&
-                                 haskey(functions(lib), LLVM.name(f)),
-                            functions(mod))
+    need_library(mod, lib) = any(f -> isdeclaration(f) &&
+                                      intrinsic_id(f) == 0 &&
+                                      haskey(functions(lib), LLVM.name(f)),
+                                 functions(mod))
 
     # always preload the runtime, and do so early; it cannot be part of any timing block
     # because it recurses into the compiler
     if libraries
-        # FIXME: device_libs = load_device_libs(job.agent)
         runtime = load_runtime(job.agent)
         runtime_fns = LLVM.name.(defs(runtime))
     end
 
     @timeit to[] "LLVM middle-end" begin
         ir, kernel = @timeit to[] "IR generation" irgen(job, method_instance, world)
-        # AG: mod, entry = irgen(job)
 
         if libraries
             undefined_fns = LLVM.name.(decls(ir))
-            # FIXME: Remove this "__nv_" check
+            #= FIXME: Remove this "__nv_" check
+            #
             if any(fn->startswith(fn, "__nv_"), undefined_fns)
                 libdevice = load_libdevice(job.cap)
                 @timeit to[] "device library" link_libdevice!(job, ir, libdevice)
             end
-            #= FIXME
+            =#
+            # FIXME: Load this only when needed
+            device_libs = load_device_libs(job.agent)
             for lib in device_libs
-                if need_library(lib)
-                    link_device_lib!(job, mod, lib)
+                if need_library(ir, lib)
+                    @timeit to[] "device library" link_device_lib!(job, ir, lib)
                 end
             end
-            link_oclc_defaults!(job, mod)
-            =#
+            @timeit to[] "oclc defaults" link_oclc_defaults!(job, ir)
         end
 
         if optimize
@@ -155,13 +155,17 @@ function codegen(target::Symbol, job::CompilerJob;
     @timeit to[] "LLVM back-end" begin
         @timeit to[] "preparation" prepare_execution!(job, ir)
 
-        asm = @timeit to[] "machine-code generation" mcgen(job, ir, kernel)
+        if target == :gcn_asm
+            asm = @timeit to[] "machine-code generation (assembly)" mcgen(job, ir, kernel; output_format = LLVM.API.LLVMAssemblyFile)
+        else
+            asm = @timeit to[] "machine-code generation (object)" mcgen(job, ir, kernel)
+        end
     end
 
-    target == :gcn && return asm, kernel_fn
+    (target == :gcn || target == :gcn_asm) && return asm, kernel_fn
 
 
-    ## CUDA objects
+    ## Executables
 
     if !strict
         # NOTE: keep in sync with strict check above
@@ -172,7 +176,7 @@ function codegen(target::Symbol, job::CompilerJob;
     end
 
     # FIXME: Pull the ld linking functionality into this code block?
-    @timeit to[] "CUDA object generation" begin
+    @timeit to[] "Executable generation" begin
         # enable debug options based on Julia's debug setting
         jit_options = Dict{Any,Any}()
         #= FIXME: Debug options
@@ -183,29 +187,8 @@ function codegen(target::Symbol, job::CompilerJob;
         end
         =#
 
-        # link the CUDA device library
-        image = asm
-        if libraries
-            # linking the device runtime library requires use of the CUDA linker,
-            # which in turn switches compilation to device relocatable code (-rdc) mode.
-            # FIXME for ROCM
-            # even if not doing any actual calls that need -rdc (i.e., calls to the runtime
-            # library), this significantly hurts performance, so don't do it unconditionally
-            undefined_fns = LLVM.name.(decls(ir))
-            intrinsic_fns = ["vprintf", "malloc", "free", "__assertfail",
-                             "__nvvm_reflect" #= TODO: should have been optimized away =#]
-            if !isempty(setdiff(undefined_fns, intrinsic_fns))
-                @timeit to[] "device runtime library" begin
-                    linker = CUDAdrv.CuLink(jit_options)
-                    CUDAdrv.add_file!(linker, libcudadevrt, CUDAdrv.LIBRARY)
-                    CUDAdrv.add_data!(linker, kernel_fn, asm)
-                    image = CUDAdrv.complete(linker)
-                end
-            end
-        end
-
         @timeit to[] "compilation" begin
-            roc_mod = ROCModule(collect(codeunits(image)), jit_options)
+            roc_mod = ROCModule(collect(codeunits(asm)), jit_options)
             roc_fun = ROCFunction(roc_mod, kernel_fn)
         end
     end

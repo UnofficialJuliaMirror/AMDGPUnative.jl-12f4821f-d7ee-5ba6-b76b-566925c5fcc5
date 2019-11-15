@@ -64,7 +64,7 @@ function load_device_libs(agent)
     return device_libs
 end
 
-function link_device_libs!(job::CompilerJob, mod::LLVM.Module, lib::LLVM.Module)
+function link_device_lib!(job::CompilerJob, mod::LLVM.Module, lib::LLVM.Module)
     # override device lib's triple and datalayout to avoid warnings
     triple!(lib, triple(mod))
     datalayout!(lib, datalayout(mod))

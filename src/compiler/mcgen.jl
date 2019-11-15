@@ -80,9 +80,9 @@ function resolve_cpu_references!(mod::LLVM.Module)
     return changed
 end
 
-function mcgen(job::CompilerJob, mod::LLVM.Module, f::LLVM.Function)
+function mcgen(job::CompilerJob, mod::LLVM.Module, f::LLVM.Function; output_format=LLVM.API.LLVMObjectFile)
     tm = machine(job.agent, triple(mod))
 
     InitializeAMDGPUAsmPrinter()
-    return String(emit(tm, mod, LLVM.API.LLVMAssemblyFile))
+    return String(emit(tm, mod, output_format))
 end
