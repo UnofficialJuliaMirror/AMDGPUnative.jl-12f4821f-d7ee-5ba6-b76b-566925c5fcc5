@@ -12,79 +12,72 @@ using InteractiveUtils
 #       otherwise invalid code (e.g. with missing symbols).
 
 """
-    code_llvm([io], f, types; optimize=true, cap::VersionNumber, kernel=true,
-                              dump_module=false, strip_ir_metadata=true)
+    code_llvm([io], f, types; optimize=true, agent::HSAAgent=get_default_agent(), kernel=false,
+              optimize=true, raw=false, dump_module=false, strict=false)
 
 Prints the device LLVM IR generated for the method matching the given generic function and
-type signature to `io` which defaults to `stdout`. The IR is optimized according to
-`optimize` (defaults to true), which includes entry-point specific optimizations if `kernel`
-is set (defaults to false). The device capability `cap` to generate code for defaults to the
-current active device's capability, or v"2.0" if there is no such active context. The entire
-module, including headers and other functions, is dumped if `dump_module` is set (defaults
-to false). Finally, setting `strip_ir_metadata` removes all debug metadata (defaults to
-true).
+type signature to `io` which defaults to `stdout`.
+
+The following keyword arguments are supported:
+
+- `agent`: which device to generate code for
+- `kernel`: treat the function as an entry-point kernel
+- `optimize`: determines if the code is optimized, which includes kernel-specific
+  optimizations if `kernel` is true
+- `raw`: return the raw IR including all metadata
+- `dump_module`: display the entire module instead of just the function
+- `strict`: verify generate code as early as possible
 
 See also: [`@device_code_llvm`](@ref), [`InteractiveUtils.code_llvm`](@ref)
 """
-function code_llvm(io::IO, @nospecialize(func::Core.Function), @nospecialize(types=Tuple);
+function code_llvm(io::IO, @nospecialize(func), @nospecialize(types);
                    optimize::Bool=true, agent::HSAAgent=get_default_agent(),
-                   dump_module::Bool=false, strip_ir_metadata::Bool=true,
-                   kernel::Bool=false, kwargs...)
+                   dump_module::Bool=false, raw::Bool=false,
+                   kernel::Bool=false, strict::Bool=false, kwargs...)
     tt = Base.to_tuple_type(types)
     job = CompilerJob(func, tt, agent, kernel; kwargs...)
-    code_llvm(io, job; optimize=optimize, dump_module=dump_module,
-              strip_ir_metadata=strip_ir_metadata)
+    code_llvm(io, job; optimize=optimize,
+              raw=raw, dump_module=dump_module, strict=strict)
 end
-function code_llvm(io::IO, job::CompilerJob; optimize::Bool=true,
-                   dump_module::Bool=false, strip_ir_metadata::Bool=true)
-    check_method(job)
-    mod, entry = irgen(job)
-    if optimize
-        entry = optimize!(job, mod, entry)
-    end
-    if strip_ir_metadata
-        strip_debuginfo!(mod)
-    end
+function code_llvm(io::IO, job::CompilerJob; optimize::Bool=true, raw::Bool=false,
+                   dump_module::Bool=false, strict::Bool=false)
+    ir, entry = codegen(:llvm, job; optimize=optimize, strip=!raw, strict=strict)
     if dump_module
-        show(io, mod)
+        show(io, ir)
     else
         show(io, entry)
     end
 end
-code_llvm(@nospecialize(func), @nospecialize(types=Tuple); kwargs...) =
+code_llvm(@nospecialize(func), @nospecialize(types); kwargs...) =
     code_llvm(stdout, func, types; kwargs...)
 
 """
-    code_gcn([io], f, types; cap::VersionNumber, kernel=false, strip_ir_metadata=true)
+    code_gcn([io], f, types; agent::HSAAgent=get_default_agent(), kernel=false, raw=false, strict=false)
 
 Prints the GCN assembly generated for the method matching the given generic function and
-type signature to `io` which defaults to `stdout`. The device capability `cap` to generate
-code for defaults to the current active device's capability, or v"2.0" if there is no such
-active context. The optional `kernel` parameter indicates whether the function in question
-is an entry-point function, or a regular device function. Finally, setting
-`strip_ir_metadata` removes all debug metadata (defaults to true).
+type signature to `io` which defaults to `stdout`.
+
+The following keyword arguments are supported:
+
+- `agent`: which device to generate code for
+- `kernel`: treat the function as an entry-point kernel
+- `raw`: return the raw code including all metadata
+- `strict`: verify generate code as early as possible
 
 See also: [`@device_code_gcn`](@ref)
 """
-function code_gcn(io::IO, @nospecialize(func::Core.Function), @nospecialize(types=Tuple);
+function code_gcn(io::IO, @nospecialize(func), @nospecialize(types);
                   agent::HSAAgent=get_default_agent(), kernel::Bool=false,
-                  strip_ir_metadata::Bool=true, kwargs...)
+                  raw::Bool=false, strict::Bool=false, kwargs...)
     tt = Base.to_tuple_type(types)
     job = CompilerJob(func, tt, agent, kernel; kwargs...)
-    code_gcn(io, job; strip_ir_metadata=strip_ir_metadata)
+    code_gcn(io, job; raw=raw, strict=strict)
 end
-function code_gcn(io::IO, job::CompilerJob; strip_ir_metadata::Bool=true)
-    check_method(job)
-    mod, entry = irgen(job)
-    entry = optimize!(job, mod, entry)
-    if strip_ir_metadata
-        strip_debuginfo!(mod)
-    end
-    prepare_execution!(job, mod)
-    gcn = mcgen(job, mod, entry; file_type=LLVM.API.LLVMAssemblyFile)
-    print(io, String(gcn))
+function code_gcn(io::IO, job::CompilerJob; raw::Bool=false, strict::Bool=false)
+    asm, _ = codegen(:gcn, job; strip=!raw, strict=strict)
+    print(io, asm)
 end
-code_gcn(@nospecialize(func), @nospecialize(types=Tuple); kwargs...) =
+code_gcn(@nospecialize(func), @nospecialize(types); kwargs...) =
     code_gcn(stdout, func, types; kwargs...)
 
 #
