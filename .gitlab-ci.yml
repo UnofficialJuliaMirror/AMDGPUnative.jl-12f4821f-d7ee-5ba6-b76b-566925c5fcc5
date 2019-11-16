@@ -3,7 +3,7 @@ stages:
     - post
 
 include:
-    - 'https://github.com/JuliaGPU/gitlab-ci/blob/master/templates/v5/test.yml'
+    - 'https://raw.githubusercontent.com/JuliaGPU/gitlab-ci/master/templates/v5/test.yml'
 
 test:v1.0:
   extends: .test
